@@ -27,7 +27,7 @@ import os
 import logging
 import unittest
 from decimal import Decimal
-from service.models import Product, Category, db
+from service.models import Product, Category, DataValidationError, db
 from service import app
 from tests.factories import ProductFactory
 
@@ -101,9 +101,6 @@ class TestProductModel(unittest.TestCase):
         self.assertEqual(new_product.available, product.available)
         self.assertEqual(new_product.category, product.category)
 
-    #
-    # ADD YOUR TEST CASES HERE
-    #
     def test_read_product(self):
         """Test reading a product from the database."""
         product = ProductFactory()
@@ -116,7 +113,6 @@ class TestProductModel(unittest.TestCase):
         assert found.name == product.name
         assert found.description == product.description
         assert found.price == product.price
-
 
     def test_update_product(self):
         """Test updating a product"""
@@ -133,7 +129,6 @@ class TestProductModel(unittest.TestCase):
         self.assertEqual(len(products), 1)
         self.assertEqual(products[0].id, original_id)
         self.assertEqual(products[0].description, "testing")
-    
 
     def test_delete_a_product(self):
         """It should Delete a Product"""
@@ -143,7 +138,6 @@ class TestProductModel(unittest.TestCase):
         # delete the product and make sure it isn't in the database
         product.delete()
         self.assertEqual(len(Product.all()), 0)
-
 
     def test_list_all_products(self):
         """It should List all Products in the database"""
@@ -157,7 +151,6 @@ class TestProductModel(unittest.TestCase):
         products = Product.all()
         self.assertEqual(len(products), 5)
 
-
     def test_find_by_name(self):
         """It should Find a Product by Name"""
         products = ProductFactory.create_batch(5)
@@ -169,7 +162,6 @@ class TestProductModel(unittest.TestCase):
         self.assertEqual(found.count(), count)
         for product in found:
             self.assertEqual(product.name, name)
-
 
     def test_find_by_availability(self):
         """It should Find Products by Availability"""
@@ -183,7 +175,6 @@ class TestProductModel(unittest.TestCase):
         for product in found:
             self.assertEqual(product.available, available)
 
-
     def test_find_by_category(self):
         """It should Find Products by Category"""
         products = ProductFactory.create_batch(10)
@@ -195,3 +186,57 @@ class TestProductModel(unittest.TestCase):
         self.assertEqual(found.count(), count)
         for product in found:
             self.assertEqual(product.category, category)
+
+    #
+    # Additional tests to improve coverage
+    #
+
+    def test_deserialize_missing_name(self):
+        """Test deserialize raises DataValidationError if name is missing"""
+        product = Product()
+        data = {
+            "description": "desc",
+            "price": "10.00",
+            "available": True,
+            "category": "CLOTHS",
+        }
+        with self.assertRaises(DataValidationError) as context:
+            product.deserialize(data)
+        self.assertIn("missing name", str(context.exception))
+
+    def test_deserialize_invalid_available_type(self):
+        """Test deserialize raises DataValidationError if available is not boolean"""
+        product = Product()
+        data = {
+            "name": "Test",
+            "description": "desc",
+            "price": "10.00",
+            "available": "yes",  # invalid boolean
+            "category": "CLOTHS",
+        }
+        with self.assertRaises(DataValidationError) as context:
+            product.deserialize(data)
+        self.assertIn("Invalid type for boolean", str(context.exception))
+
+    def test_update_without_id(self):
+        """Test update raises DataValidationError when id is None"""
+        product = Product(name="Test", description="desc", price=Decimal("10.00"), available=True, category=Category.CLOTHS)
+        with self.assertRaises(DataValidationError) as context:
+            product.update()
+        self.assertIn("empty ID field", str(context.exception))
+
+    def test_find_by_price_string(self):
+        """Test find_by_price works with string input"""
+        product = ProductFactory()
+        product.create()
+        price_str = str(product.price)
+        found = Product.find_by_price(price_str)
+        self.assertTrue(found.count() >= 1)
+
+    def test_find_by_category_default(self):
+        """Test find_by_category with default parameter"""
+        # Create a product with UNKNOWN category
+        product = Product(name="UnknownCat", description="desc", price=Decimal("10.00"), available=True, category=Category.UNKNOWN)
+        product.create()
+        found = Product.find_by_category()
+        self.assertTrue(any(p.id == product.id for p in found))
